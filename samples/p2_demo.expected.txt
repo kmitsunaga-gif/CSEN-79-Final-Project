@@ -1,0 +1,42 @@
+OK SUB alice news/sports
+OK SUB bob news
+OK SUB bob news/sports/soccer
+OK SUB carol horoscope/leo
+OK SUB dave news/tech
+OK SUB erin items/phones/pixel-10
+OK SUB frank items/phones/pixel-10
+OK SUB gina items/phones/pixel-10
+ERROR already subscribed alice news/sports
+ALERT D0 00:00 alice news/sports/soccer Final score 2-1
+ALERT D0 00:00 bob news/sports/soccer Final score 2-1
+ALERT D0 00:00 bob news/world Elections today
+ALERT D0 00:00 bob news/tech New compiler released
+ALERT D0 00:00 bob news/tech Faster hash maps
+ALERT D0 00:00 erin items/phones/pixel-10 price 579.00 below 600.00
+ALERT D0 00:00 gina items/phones/pixel-10 price 579.00 below 600.00
+ALERT D0 00:00 frank items/phones/pixel-10 price 549.00 below 550.00
+ALERT D0 06:00 dave news/tech New compiler released
+ALERT D0 06:00 dave news/tech Faster hash maps
+TIME D0 06:00
+ALERT D0 08:00 carol horoscope/leo A good day for data structures
+TIME D0 08:00
+OK UNSUB dave news/tech
+ERROR not subscribed dave news/tech
+ALERT D1 08:00 carol horoscope/leo Expect a surprise
+TIME D1 08:00
+ALERT D0 00:00 bob news/sports/soccer Final score 2-1
+ALERT D0 00:00 bob news/world Elections today
+ALERT D0 00:00 bob news/tech New compiler released
+ALERT D0 00:00 bob news/tech Faster hash maps
+END
+ALERT D1 08:00 carol horoscope/leo Expect a surprise
+END
+D0 00:00 SUB news/tech every 6
+D0 06:00 ALERT news/tech New compiler released
+D0 06:00 ALERT news/tech Faster hash maps
+D0 08:00 UNSUB news/tech
+END
+D0 00:00 SUB items/phones/pixel-10 below 600.00
+D0 00:00 ALERT items/phones/pixel-10 price 579.00 below 600.00
+END
+ERROR bad command

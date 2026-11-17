@@ -1,0 +1,34 @@
+# Project 2 sample script. The clock starts at D0 00:00.
+SUB alice news/sports
+SUB bob news
+SUB bob news/sports/soccer
+SUB carol horoscope/leo at 08:00
+SUB dave news/tech every 6
+SUB erin items/phones/pixel-10 below 600.00
+SUB frank items/phones/pixel-10 below 550.00
+SUB gina items/phones/pixel-10 below 600.00
+SUB alice news/sports
+# alice and bob get this one; bob only once, through his most specific subscription.
+PUB news/sports/soccer Final score 2-1
+PUB news/world Elections today
+PUB horoscope/leo A good day for data structures
+PUB news/tech New compiler released
+PUB news/tech Faster hash maps
+# First price is above every threshold: no alerts.
+PRICE items/phones/pixel-10 699.00
+# Crosses 600 (erin, gina) but not 550.
+PRICE items/phones/pixel-10 579.00
+# Still below 600: erin and gina are not alerted again. Crosses 550 for frank.
+PRICE items/phones/pixel-10 549.00
+TICK 360
+TICK 120
+PUB horoscope/leo Expect a surprise
+UNSUB dave news/tech
+UNSUB dave news/tech
+TICK 1440
+INBOX bob
+INBOX carol 1
+HISTORY dave
+HISTORY gina
+SUB carol horoscope/leo below 10 at 08:00
+STATS
