@@ -1,0 +1,9 @@
+# Build output (every build folder: build, build-asan, build-fast)
+build*/
+
+# Generated workload files (rebuild them from the seeds instead)
+workloads/
+
+# Mac junk
+.DS_Store
+__MACOSX/
