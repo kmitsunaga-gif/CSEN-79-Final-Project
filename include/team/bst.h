@@ -9,6 +9,24 @@ namespace team {
     template <class Key, class Value>
     class BST{
         public:
+            
+            ~BST(){
+                tree_clear(root);
+            }
+
+            Value* find(const Key& key){
+                Node* current = root;
+                while(current != nullptr){
+                    if(key == current -> key){
+                        return &current -> value;
+                    } else if (key < current ->key){
+                        current = current -> left;
+                    } else {
+                        current = current -> right;
+                    }
+                }
+                return nullptr;
+            }
             bool insert(const Key& key, const Value& value){
                 //empty tree check, where the new node is the root
                 if (root == nullptr){
@@ -52,6 +70,21 @@ namespace team {
                 Node* left = nullptr;
                 Node* right = nullptr;
             };
+
+            void tree_clear(Node* root)
+            {
+                Node* child;
+                if (root != nullptr)
+                {
+                    child = root->left;
+                    tree_clear( child );
+                    
+                    child = root->right; //deletes right subtree
+                    tree_clear( child );
+                    delete root; //deletes the node
+                    root = nullptr;
+                }
+            }
 
             Node* root = nullptr;
 
