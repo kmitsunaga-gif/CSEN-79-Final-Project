@@ -140,9 +140,10 @@ namespace final_project_map {
             // First entry in comparator order (best price), or nullptr if empty.
             std::pair<Key, Value>* first() {
                 Node* c = root;
-                KIT_COUNT(stats_, visits);
-                while(c != nullptr && c->left() != nullptr) 
+                while(c != nullptr && c->left() != nullptr) {
+                    KIT_COUNT(stats_, visits);
                     c = c->left();
+                }
                 if(c != nullptr)
                     return &c->data();
                 return nullptr;
@@ -151,12 +152,13 @@ namespace final_project_map {
             // Visits entries in order; visit(entry) returns false to stop early.
             template <class F>
             void forEachInOrder(F visit) { inOrder(root, visit); }
+
+            // True if BST order, stored heights, and AVL balance all hold.
+            bool check_invariants() const { 
+                return checkNode(root, nullptr, nullptr) >= 0; 
+            }
+
         private:
-            //  Node *root;
-            // void mapClear( Node* node);
-            //  Node* find_or_create(const std::string& key);
-            // int calcBalanceFactor( Node* node);
-            // int height( Node* node);
             mutable kit::Counters stats_;
             Node* root;
             Compare cmp;        // the comparator object
@@ -294,14 +296,6 @@ namespace final_project_map {
                 root = insertNode(root, key, result);
                 return result;
             }
-
-            // template <class Key, class Value, class Compare>
-            // void insert(const Key& key, order* userOrder) {
-            //     Node* node = find_or_create(key);
-            //     if(userOrder != nullptr)
-            //         node->getValue().push(userOrder);
-            // }
-
             
             void mapClear( Node* node) {
                 if(node != nullptr) {
@@ -319,6 +313,28 @@ namespace final_project_map {
                 if(!inOrder(node->left(), visit)) return false;
                 if(!visit(node->data())) return false;
                 return inOrder(node->right(), visit);
+            }
+
+            int checkNode(const Node* node, const Key* lo, const Key* hi) const {
+                if(node == nullptr) return 0;
+                //check BST order invariant (left < root && right > root)
+                if(lo && !cmp(*lo, node->getKey())) return -1;
+                if(hi && !cmp(node->getKey(), *hi)) return -1;
+
+                //calc height of left subtree
+                int lh = checkNode(node->left(), lo, &node->getKey());
+                if(lh < 0) return -1;
+
+                //calc height of right subtree
+                int rh = checkNode(node->right(), &node->getKey(), hi);
+                if(rh < 0) return -1;
+
+                //check AVL balance factor (must have -1 <= balance factor <= 1)
+                if(std::abs(lh - rh) > 1) return -1;
+
+                //check that the height of this subtree matches the one stored. 
+                int h = 1 + std::max(lh, rh);
+                return node->height() == h ? h : -1;
             }
     };
 }
