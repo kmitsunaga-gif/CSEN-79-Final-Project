@@ -9,7 +9,6 @@
 #define stock_book_h
 
 #include "order.h"
-#include "doubly_linked_list_node.h"
 
 #include <iostream>
 #include <string>
@@ -19,11 +18,6 @@
 #include <cstddef> //for size_t
 #include <functional> //for std::greater, std::less
 
-//hand-built core structures
-#include "B_tree.h" //TODO: implement
-#include "doubly_linked_list.h" //list
-#include "singly_linked_list.h" //forward list TODO: implement
-#include "map.h"
 
 //stl containers
 #include <map> //B-tree and map
@@ -60,15 +54,6 @@ struct TailForwardList
     bool empty() const;
 };
 
-struct HandBuiltTraits
-{
-    using BuyBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::greater<double>>;
-    using SellBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::less<double>>;
-    using IdOrderMap = map<Order::id_type, Order*>; //TODO: Map
-    using OrderList = doubly_linked_list<Order*>;
-    using forward_list = singly_linked_list<std::pair<Order*, struct historyTag>>; //TODO: singly_linked_list
-    using UserHistoryMap = map<std::string, TailForwardList<forward_list>*>;
-};
 
 struct StdTraits
 {
@@ -201,7 +186,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'b', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any ask_price <= price
@@ -346,7 +331,7 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'s', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any bid_price >= price
@@ -491,7 +476,7 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'b', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any price
@@ -616,7 +601,7 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'s', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any price
@@ -806,7 +791,7 @@ void stock_book<Traits>::bookPrint(size_t depth) const
         auto temp = list->begin();
         for(size_t j=0; j<order_count; j++)
         {
-            sum_qty += temp->get_shares();
+            sum_qty += (*temp)->get_shares();
             temp++;
         }
         //for each price level, prints <price> <total_remaining_qty> <active_order_count>
@@ -814,7 +799,7 @@ void stock_book<Traits>::bookPrint(size_t depth) const
         sellBook_it++;
     }
     //lists up to depth from highest to lowest BUY/BID price levels
-    size_t buyDepth = (sellBook.size() < depth)? sellBook.size() : depth;
+    size_t buyDepth = (buyBook.size() < depth)? buyBook.size() : depth;
     typename BuyBTree::const_iterator buyBook_it = buyBook.begin();
     for(size_t i=0; i<buyDepth; i++)
     {
@@ -825,7 +810,7 @@ void stock_book<Traits>::bookPrint(size_t depth) const
         auto temp = list->begin();
         for(size_t j=0; j<order_count; j++)
         {
-            sum_qty += temp->get_shares();
+            sum_qty += (*temp)->get_shares();
             temp++;
         }
         //for each price level, prints <price> <total_remaining_qty> <active_order_count>
