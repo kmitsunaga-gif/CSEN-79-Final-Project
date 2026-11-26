@@ -5,6 +5,9 @@
 // Tests marked "* doctest::may_fail()" check a rule the code does not follow yet (a known bug).
 // They are reported but do not stop the suite. Remove may_fail once the bug is fixed, so the
 // test guards the fix from then on.
+//
+// Sections: resting, matching, price-time priority, market orders, ids, cancel, BOOK, HISTORY,
+// and the whole samples/p1_demo.txt run through the book.
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -124,6 +127,195 @@ TEST_CASE("STL book: a partial fill leaves the resting order with fewer shares")
           "REST 3 30 50.00\n");
 }
 
+TEST_CASE("STL book: a limit buy at exactly the ask price matches") {
+    Book book;
+    capture([&] { book.sellLimit("ann", 1, 100, 50.20, 1); });
+    CHECK(capture([&] { book.buyLimit("bob", 2, 100, 50.20, 2); }) == "TRADE 2 1 100 50.20\n");
+}
+
+TEST_CASE("STL book: a limit sell only matches bids at or above its price") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 50, 50.20, 1);
+        book.buyLimit("bob", 2, 50, 49.90, 2);
+    });
+    CHECK(capture([&] { book.sellLimit("carol", 3, 100, 50.00, 3); }) ==
+          "TRADE 1 3 50 50.20\n"
+          "REST 3 50 50.00\n");
+}
+
+TEST_CASE("STL book: a sweep can end part-way into a level") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 50.00, 1);
+        book.sellLimit("bob", 2, 100, 50.10, 2);
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 150, 50.10, 3); }) ==
+          "TRADE 3 1 100 50.00\n"
+          "TRADE 3 2 50 50.10\n");
+    CHECK(capture([&] { book.bookPrint(5); }) == "ASK 50.10 50 1\nEND\n");
+}
+
+// ---------- price-time priority ----------
+// Rule (docs/OUTPUT_FORMAT.md): a buy matches the lowest ask first, a sell the highest bid
+// first; "At the same price, the order that rested first fills first."
+
+TEST_CASE("priority: two sellers at the same price, the first one in gets the sale") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.00, 1);    // ann is first
+        book.sellLimit("bob", 2, 100, 5.00, 2);    // bob is second, same price
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 100, 5.00, 3); }) == "TRADE 3 1 100 5.00\n");
+    // bob is untouched and is now first in line
+    CHECK(capture([&] { book.buyLimit("dave", 4, 100, 5.00, 4); }) == "TRADE 4 2 100 5.00\n");
+}
+
+TEST_CASE("priority: two buyers at the same price, the first one in gets the sale") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 100, 5.00, 1);
+        book.buyLimit("bob", 2, 100, 5.00, 2);
+    });
+    CHECK(capture([&] { book.sellLimit("carol", 3, 100, 5.00, 3); }) == "TRADE 1 3 100 5.00\n");
+}
+
+TEST_CASE("priority: a small buy is taken entirely from the first seller") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.00, 1);
+        book.sellLimit("bob", 2, 100, 5.00, 2);
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 30, 5.00, 3); }) == "TRADE 3 1 30 5.00\n");
+    CHECK(capture([&] { book.bookPrint(5); }) == "ASK 5.00 170 2\nEND\n");
+}
+
+TEST_CASE("priority: a large buy finishes the first seller before touching the second") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.00, 1);
+        book.sellLimit("bob", 2, 100, 5.00, 2);
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 150, 5.00, 3); }) ==
+          "TRADE 3 1 100 5.00\n"
+          "TRADE 3 2 50 5.00\n");
+}
+
+TEST_CASE("priority: three sellers at one price fill in the order they arrived") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 10, 5.00, 1);
+        book.sellLimit("bob", 2, 10, 5.00, 2);
+        book.sellLimit("carol", 3, 10, 5.00, 3);
+    });
+    CHECK(capture([&] { book.buyLimit("dave", 4, 30, 5.00, 4); }) ==
+          "TRADE 4 1 10 5.00\n"
+          "TRADE 4 2 10 5.00\n"
+          "TRADE 4 3 10 5.00\n");
+}
+
+TEST_CASE("priority: a partly filled order keeps its place at the front") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.00, 1);
+        book.sellLimit("bob", 2, 100, 5.00, 2);
+        book.buyLimit("carol", 3, 40, 5.00, 3);    // ann now has 60 left, still first
+    });
+    CHECK(capture([&] { book.buyLimit("dave", 4, 100, 5.00, 4); }) ==
+          "TRADE 4 1 60 5.00\n"
+          "TRADE 4 2 40 5.00\n");
+}
+
+TEST_CASE("priority: cancelling the first seller moves the next one up") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.00, 1);
+        book.sellLimit("bob", 2, 100, 5.00, 2);
+        book.cancelOrder(1);
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 100, 5.00, 4); }) == "TRADE 3 2 100 5.00\n");
+}
+
+TEST_CASE("priority: cancelling a seller in the middle keeps the others in order") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 10, 5.00, 1);
+        book.sellLimit("bob", 2, 10, 5.00, 2);
+        book.sellLimit("carol", 3, 10, 5.00, 3);
+        book.cancelOrder(2);
+    });
+    CHECK(capture([&] { book.buyLimit("dave", 4, 20, 5.00, 5); }) ==
+          "TRADE 4 1 10 5.00\n"
+          "TRADE 4 3 10 5.00\n");
+}
+
+TEST_CASE("priority: a later order at the same price joins the back, even if larger") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 10, 5.00, 1);
+        book.sellLimit("bob", 2, 1000, 5.00, 2);   // bigger, but later
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 10, 5.00, 3); }) == "TRADE 3 1 10 5.00\n");
+}
+
+TEST_CASE("priority: a better price beats an earlier order at a worse price") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 5.10, 1);    // first, but more expensive
+        book.sellLimit("bob", 2, 100, 5.00, 2);    // later, but cheaper
+    });
+    CHECK(capture([&] { book.buyLimit("carol", 3, 100, 5.10, 3); }) == "TRADE 3 2 100 5.00\n");
+}
+
+TEST_CASE("priority: a higher bid beats an earlier lower bid") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 100, 4.90, 1);
+        book.buyLimit("bob", 2, 100, 5.00, 2);
+    });
+    CHECK(capture([&] { book.sellLimit("carol", 3, 100, 4.90, 3); }) == "TRADE 2 3 100 5.00\n");
+}
+
+TEST_CASE("priority: a sweep takes best price first, oldest first within each price") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 10, 5.10, 1);
+        book.sellLimit("bob", 2, 10, 5.00, 2);
+        book.sellLimit("carol", 3, 10, 5.10, 3);
+        book.sellLimit("dave", 4, 10, 5.00, 4);
+    });
+    CHECK(capture([&] { book.buyLimit("erin", 5, 40, 5.10, 5); }) ==
+          "TRADE 5 2 10 5.00\n"
+          "TRADE 5 4 10 5.00\n"
+          "TRADE 5 1 10 5.10\n"
+          "TRADE 5 3 10 5.10\n");
+}
+
+TEST_CASE("priority: market orders follow the same order") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 10, 5.00, 1);
+        book.buyLimit("bob", 2, 10, 5.00, 2);
+        book.buyLimit("carol", 3, 10, 4.00, 3);
+    });
+    CHECK(capture([&] { book.sellMarket("dave", 4, 25, 4); }) ==
+          "TRADE 1 4 10 5.00\n"
+          "TRADE 2 4 10 5.00\n"
+          "TRADE 3 4 5 4.00\n");
+}
+
+TEST_CASE("priority: a crossing order's leftover rests behind orders already at its price") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 100, 5.00, 1);     // resting bid at 5.00
+        book.sellLimit("bob", 2, 10, 5.00, 2);     // fills 10 of ann's
+        book.buyLimit("carol", 3, 50, 5.00, 3);    // no asks: rests behind ann
+    });
+    CHECK(capture([&] { book.sellLimit("dave", 4, 100, 5.00, 4); }) ==
+          "TRADE 1 4 90 5.00\n"
+          "TRADE 3 4 10 5.00\n");
+}
+
 // ---------- market orders ----------
 
 TEST_CASE("STL book: a market sell sweeps the bids, best price first, then UNFILLED") {
@@ -150,8 +342,23 @@ TEST_CASE("STL book: a market order never rests") {
     CHECK(capture([&] { book.bookPrint(5); }) == "END\n");
 }
 
-TEST_CASE("STL book: a fully filled market order prints no UNFILLED" * doctest::may_fail()) {
-    // known bug: prints "UNFILLED 2 0"
+TEST_CASE("STL book: a market buy sweeps asks lowest first") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 10, 50.30, 1);
+        book.sellLimit("bob", 2, 10, 50.10, 2);
+    });
+    CHECK(capture([&] { book.buyMarket("carol", 3, 15, 3); }) ==
+          "TRADE 3 2 10 50.10\n"
+          "TRADE 3 1 5 50.30\n");
+}
+
+TEST_CASE("STL book: a market sell on an empty bid side is all UNFILLED") {
+    Book book;
+    CHECK(capture([&] { book.sellMarket("ann", 1, 10, 1); }) == "UNFILLED 1 10\n");
+}
+
+TEST_CASE("STL book: a fully filled market order prints no UNFILLED") {
     Book book;
     capture([&] { book.sellLimit("ann", 1, 100, 50.00, 1); });
     CHECK(capture([&] { book.buyMarket("bob", 2, 100, 2); }) == "TRADE 2 1 100 50.00\n");
@@ -178,6 +385,22 @@ TEST_CASE("STL book: ids of filled and market orders cannot be reused") {
     CHECK(capture([&] { book.sellLimit("dave", 3, 5, 51.00, 5); }) == "ERROR duplicate id 3\n");
 }
 
+TEST_CASE("STL book: the id of a cancelled order cannot be reused") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 50.00, 1);
+        book.cancelOrder(1);
+    });
+    CHECK(capture([&] { book.sellLimit("bob", 1, 10, 51.00, 3); }) == "ERROR duplicate id 1\n");
+}
+
+TEST_CASE("STL book: a rejected duplicate changes nothing on the book") {
+    Book book;
+    capture([&] { book.sellLimit("ann", 1, 100, 50.00, 1); });
+    capture([&] { book.sellLimit("ann", 1, 999, 40.00, 2); });       // rejected
+    CHECK(capture([&] { book.bookPrint(5); }) == "ASK 50.00 100 1\nEND\n");
+}
+
 // ---------- cancel ----------
 
 TEST_CASE("STL book: cancel a resting bid and a resting ask") {
@@ -201,21 +424,25 @@ TEST_CASE("STL book: cancel an id that never existed") {
     CHECK(capture([&] { book.cancelOrder(42); }) == "ERROR unknown order 42\n");
 }
 
-TEST_CASE("STL book: cancelling the same order twice" * doctest::may_fail()) {
-    // known bug: the second cancel prints nothing
+TEST_CASE("STL book: cancelling the same order twice") {
     Book book;
     build_sample_book(book);
     capture([&] { book.cancelOrder(6); });
     CHECK(capture([&] { book.cancelOrder(6); }) == "ERROR unknown order 6\n");
 }
 
-TEST_CASE("STL book: cancelling a filled order" * doctest::may_fail()) {
-    // known bug: prints nothing
+TEST_CASE("STL book: cancelling a filled order") {
     Book book;
     capture([&] {
         book.sellLimit("ann", 1, 100, 50.00, 1);
         book.buyLimit("bob", 2, 100, 50.00, 2);
     });
+    CHECK(capture([&] { book.cancelOrder(1); }) == "ERROR unknown order 1\n");
+}
+
+TEST_CASE("STL book: cancelling a market order's id is an unknown order") {
+    Book book;
+    capture([&] { book.buyMarket("ann", 1, 10, 1); });          // market orders never rest
     CHECK(capture([&] { book.cancelOrder(1); }) == "ERROR unknown order 1\n");
 }
 
@@ -251,8 +478,7 @@ TEST_CASE("STL book: BOOK with only asks does not crash") {
     CHECK(out.find("END") != std::string::npos);
 }
 
-TEST_CASE("STL book: BOOK lists asks lowest first, then bids highest first" * doctest::may_fail()) {
-    // known bug: lines are missing the ASK / BID label
+TEST_CASE("STL book: BOOK lists asks lowest first, then bids highest first") {
     Book book;
     build_sample_book(book);
     CHECK(capture([&] { book.bookPrint(5); }) ==
@@ -263,14 +489,45 @@ TEST_CASE("STL book: BOOK lists asks lowest first, then bids highest first" * do
           "END\n");
 }
 
-TEST_CASE("STL book: BOOK depth limits each side" * doctest::may_fail()) {
-    // known bug: lines are missing the ASK / BID label
+TEST_CASE("STL book: BOOK depth limits each side") {
     Book book;
     build_sample_book(book);
     CHECK(capture([&] { book.bookPrint(1); }) ==
           "ASK 50.20 350 2\n"
           "BID 50.10 350 2\n"
           "END\n");
+}
+
+TEST_CASE("STL book: BOOK with only bids") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 100, 50.00, 1);
+        book.buyLimit("bob", 2, 100, 50.10, 2);
+    });
+    CHECK(capture([&] { book.bookPrint(5); }) ==
+          "BID 50.10 100 1\n"
+          "BID 50.00 100 1\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: BOOK 5 shows only the best 5 levels per side") {
+    Book book;
+    capture([&] {
+        for (int i = 0; i < 7; ++i) book.sellLimit("ann", 1 + i, 10, 50.00 + i, 1 + i);
+    });
+    CHECK(capture([&] { book.bookPrint(5); }) ==
+          "ASK 50.00 10 1\n"
+          "ASK 51.00 10 1\n"
+          "ASK 52.00 10 1\n"
+          "ASK 53.00 10 1\n"
+          "ASK 54.00 10 1\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: BOOK depth larger than the book shows every level") {
+    Book book;
+    capture([&] { book.sellLimit("ann", 1, 10, 50.00, 1); });
+    CHECK(capture([&] { book.bookPrint(100); }) == "ASK 50.00 10 1\nEND\n");
 }
 
 TEST_CASE("STL book: BOOK totals and counts follow fills and cancels") {
@@ -323,8 +580,7 @@ TEST_CASE("STL book: HISTORY shows MKT for market orders and UNFILLED") {
           "END\n");
 }
 
-TEST_CASE("STL book: HISTORY with n shows only the last n events" * doctest::may_fail()) {
-    // known bug: shows the first n events instead
+TEST_CASE("STL book: HISTORY with n shows only the last n events") {
     Book book;
     capture([&] {
         book.sellLimit("ann", 1, 100, 50.30, 1);
@@ -342,6 +598,90 @@ TEST_CASE("STL book: HISTORY with n larger than the history shows everything") {
     CHECK(capture([&] { book.historyPrint("dave", 10); }) ==
           "#1 PLACE 4 BUY 100 50.00\n"
           "END\n");
+}
+
+TEST_CASE("STL book: HISTORY records a fill for both the buyer and the seller") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 50.00, 1);
+        book.buyLimit("bob", 2, 40, 50.00, 2);
+    });
+    CHECK(capture([&] { book.historyPrint("ann"); }) ==
+          "#1 PLACE 1 SELL 100 50.00\n"
+          "#2 FILL 1 40 50.00\n"
+          "END\n");
+    CHECK(capture([&] { book.historyPrint("bob"); }) ==
+          "#2 PLACE 2 BUY 40 50.00\n"
+          "#2 FILL 2 40 50.00\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: HISTORY PLACE shows the original quantity, not what was left") {
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 30, 50.00, 1);
+        book.buyLimit("bob", 2, 100, 50.00, 2);     // 30 fill, 70 rest
+    });
+    CHECK(capture([&] { book.historyPrint("bob"); }) ==
+          "#2 PLACE 2 BUY 100 50.00\n"
+          "#2 FILL 2 30 50.00\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: HISTORY covers several commands, oldest first") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 10, 50.00, 1);
+        book.sellLimit("bob", 2, 10, 51.00, 2);
+        book.buyLimit("ann", 3, 10, 49.00, 3);
+    });
+    CHECK(capture([&] { book.historyPrint("ann"); }) ==
+          "#1 PLACE 1 BUY 10 50.00\n"
+          "#3 PLACE 3 BUY 10 49.00\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: HISTORY with n equal to the history size shows everything") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 10, 50.00, 1);
+        book.buyLimit("ann", 2, 10, 49.00, 2);
+    });
+    CHECK(capture([&] { book.historyPrint("ann", 2); }) ==
+          "#1 PLACE 1 BUY 10 50.00\n"
+          "#2 PLACE 2 BUY 10 49.00\n"
+          "END\n");
+}
+
+TEST_CASE("STL book: HISTORY with n = 1 shows only the newest event") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 10, 50.00, 1);
+        book.buyLimit("ann", 2, 10, 49.00, 2);
+    });
+    CHECK(capture([&] { book.historyPrint("ann", 1); }) == "#2 PLACE 2 BUY 10 49.00\nEND\n");
+}
+
+TEST_CASE("STL book: a rejected duplicate id is not added to HISTORY") {
+    Book book;
+    capture([&] {
+        book.buyLimit("ann", 1, 10, 50.00, 1);
+        book.buyLimit("ann", 1, 99, 40.00, 2);      // ERROR duplicate id
+    });
+    CHECK(capture([&] { book.historyPrint("ann"); }) == "#1 PLACE 1 BUY 10 50.00\nEND\n");
+}
+
+TEST_CASE("STL book: HISTORY shows CANCEL events" * doctest::may_fail()) {
+    // known bug: cancelOrder does not record "#<n> CANCEL <id> <qty>" (format doc, HISTORY lines).
+    // It also has no command number to record: cancelOrder(id) needs a num parameter.
+    Book book;
+    capture([&] {
+        book.sellLimit("ann", 1, 100, 50.00, 1);
+        book.buyLimit("bob", 2, 40, 50.00, 2);
+        book.cancelOrder(1);
+    });
+    std::string out = capture([&] { book.historyPrint("ann"); });
+    CHECK(out.find(" CANCEL 1 60\n") != std::string::npos);
 }
 
 // ---------- the whole sample, command by command ----------
