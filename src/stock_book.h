@@ -572,6 +572,10 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
         
         //discard the unfilled
     }
+    else //if unfilled == 0
+    {
+        delete current;
+    }
     
     return;
     /* Post-condition of buyMarket():
@@ -701,6 +705,10 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
         
         //discard the unfilled
     }
+    else //if unfilled == 0
+    {
+        delete current;
+    }
     
     return;
     /* Post-condition of sellMarket():
@@ -816,7 +824,7 @@ void stock_book<Traits>::bookPrint(size_t depth) const
         auto temp = list->begin();
         for(size_t j=0; j<order_count; j++)
         {
-            sum_qty += temp->get_shares();
+            sum_qty += (*temp)->get_shares();
             temp++;
         }
         //for each price level, prints <price> <total_remaining_qty> <active_order_count>
@@ -835,7 +843,7 @@ void stock_book<Traits>::bookPrint(size_t depth) const
         auto temp = list->begin();
         for(size_t j=0; j<order_count; j++)
         {
-            sum_qty += temp->get_shares();
+            sum_qty += (*temp)->get_shares();
             temp++;
         }
         //for each price level, prints <price> <total_remaining_qty> <active_order_count>
