@@ -5,19 +5,6 @@
 //  Created by Emily Chen on 2026/11/18.
 //
 
-/*
-#include <iostream>
-#include <fstream> //for file (read & write) operations
-#include <string>
-#include <sstream>
-#include <cstddef> //for size_t
-#include <utility> //for pair
-#include <algorithm> //for min
-
-#include "order.h"
-#include "stock_book.h"
-*/
-
 #include "order.h"
 #include "stock_book.h"
 
@@ -142,7 +129,7 @@ int main(int argc, const char * argv[])
             {
                 ++command_num;
                 //call cancelOrder()
-                book.cancelOrder(id);
+                book.cancelOrder(id, command_num);
             }
             else
             {
@@ -188,8 +175,6 @@ int main(int argc, const char * argv[])
         }
     }
     
-    //TODO: call a function and loop to free all the Order objects pointed by pointers in the list history;
-    
-    
+    //main function ends with automatically calling stock_book deconstructor to free all heap memory allocated
     return 0;
 }
