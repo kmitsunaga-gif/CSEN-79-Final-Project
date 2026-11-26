@@ -27,7 +27,7 @@
 //stl containers
 #include <map> //B-tree and map
 #include <list>
-#include <forward_list> //TODO: compare with using list as well
+#include <forward_list> //TODO: compare with using list/vector
 
 
 namespace CSEN79_StockBook
@@ -102,7 +102,7 @@ struct stock_book
     void sellLimit(const std::string& user, Order::id_type id, Order::size_type qty, double price, size_t num);
     void buyMarket(const std::string& user, Order::id_type id, Order::size_type qty, size_t num);
     void sellMarket(const std::string& user, Order::id_type id, Order::size_type qty, size_t num);
-    void cancelOrder(Order::id_type id);
+    void cancelOrder(Order::id_type id, size_t num);
     void bookPrint(std::size_t depth) const;
     void historyPrint(const std::string& user, std::size_t n) const;
     void historyPrint(const std::string& user) const;
@@ -201,7 +201,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'b', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any ask_price <= price
@@ -279,7 +279,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
         
         if(buyBook_it != buyBook.end()) //if this price level already exists at it
         {
-            //TODO: here assumed push_back() deals with empty lists; B-tree never leaves nodes with deallocated list
+            //TODO: here assumed B-tree never leaves nodes with deallocated list
             (buyBook_it->second)->push_back(current);
         }
         else
@@ -346,7 +346,7 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'s', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any bid_price >= price
@@ -424,7 +424,7 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
         
         if(sellBook_it != sellBook.end()) //if this price level already exists at it
         {
-            //TODO: here assumed push_back() deals with empty lists; B-tree never leaves nodes with deallocated list
+            //TODO: here assumed B-tree never leaves nodes with deallocated list
             (sellBook_it->second)->push_back(current);
         }
         else
@@ -491,7 +491,7 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'b', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any price
@@ -624,7 +624,7 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
         TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
         historyTag tag{'s', num};
         history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history))->first; //insert and update userHistoryMap_it to point to inserted
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any price
@@ -730,7 +730,7 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
 }
 
 template <typename Traits>
-void stock_book<Traits>::cancelOrder(Order::id_type id)
+void stock_book<Traits>::cancelOrder(Order::id_type id, size_t num)
 {
     //using map, retrieve Order* with input id
     typename IdOrderMap::iterator idOrderMap_it = idOrderMap.find(id);
@@ -755,8 +755,19 @@ void stock_book<Traits>::cancelOrder(Order::id_type id)
         typename SellBTree::iterator sellFind = sellBook.find(targetPrice);
         if(sellFind != sellBook.end()) //if found in sellBook
         {
+            Order::size_type remaining_qty = orderPtr->get_shares();
+            std::string seller = orderPtr->get_user();
+            
             //print CANCELLED <id> <remaining_qty>
-            std::cout << "CANCELLED " << id << " " << orderPtr->get_shares() << std::endl;
+            std::cout << "CANCELLED " << id << " " << remaining_qty << std::endl;
+            
+            //append #<n> CANCEL <id> <qty> in seller's HISTORY
+            auto userHistoryMap_it = userHistoryMap.find(seller);
+            //userHistoryMap_it points to a pair of the buyer's name and History
+            Order* cancelCopy = new Order(id, targetPrice, remaining_qty, seller);
+            //'c' means "CANCEL..."
+            historyTag tag{'c', num};
+            userHistoryMap_it->second->push_back(std::make_pair(cancelCopy, tag)); //append to seller's History
             
             //pop the order from sell/ask B-tree (remove from list, and remove the price level from B-tree if necessary)
             sellFind->second->remove(orderPtr); //unlink/remove from list
@@ -775,8 +786,19 @@ void stock_book<Traits>::cancelOrder(Order::id_type id)
             typename BuyBTree::iterator buyFind = buyBook.find(targetPrice);
             if(buyFind != buyBook.end()) //if found in buyBook
             {
+                Order::size_type remaining_qty = orderPtr->get_shares();
+                std::string buyer = orderPtr->get_user();
+                
                 //print CANCELLED <id> <remaining_qty>
-                std::cout << "CANCELLED " << id << " " << orderPtr->get_shares() << std::endl;
+                std::cout << "CANCELLED " << id << " " << remaining_qty << std::endl;
+                
+                //append #<n> CANCEL <id> <qty> in buyer's HISTORY
+                auto userHistoryMap_it = userHistoryMap.find(buyer);
+                //userHistoryMap_it points to a pair of the buyer's name and History
+                Order* cancelCopy = new Order(id, targetPrice, remaining_qty, buyer);
+                //'c' means "CANCEL..."
+                historyTag tag{'c', num};
+                userHistoryMap_it->second->push_back(std::make_pair(cancelCopy, tag)); //append to buyer's History
                 
                 //pop the order from buy/bid B-tree (remove from list, and remove the price level from B-tree if necessary)
                 buyFind->second->remove(orderPtr); //unlink/remove from list
@@ -923,6 +945,11 @@ void stock_book<Traits>::historyPrint(const std::string& user, size_t n) const
                 //print #<n> UNFILLED <id> <qty>
                 std::cout << "#" << it->second.num << " UNFILLED " << temp->get_id() << " " << temp->get_shares() << std::endl;
             }
+            else if(it->second.action == 'c')
+            {
+                //print #<n> CANCEL <id> <qty>
+                std::cout << "#" << it->second.num << " CANCEL " << temp->get_id() << " " << temp->get_shares() << std::endl;
+            }
             ++it;
             --n;
         }
@@ -940,7 +967,8 @@ void stock_book<Traits>::historyPrint(const std::string& user, size_t n) const
      - #<n> PLACE <id> SELL <qty> <price> //'s'
      - #<n> PLACE <id> BUY <qty> MKT //second == 'b' && price == 0.00
      - #<n> PLACE <id> SELL <qty> MKT //second == 's' && price == 0.00
-     - #<m> FILL <id> <fill_qty> <trade_price> //'f'
+     - #<n> CANCEL <id> <qty>
+     - #<n> FILL <id> <fill_qty> <trade_price> //'f'
      - #<n> UNFILLED <id> <qty> //'u'
      - print "END" in last line
      */
@@ -997,6 +1025,11 @@ void stock_book<Traits>::historyPrint(const std::string& user) const
             {
                 //print #<n> UNFILLED <id> <qty>
                 std::cout << "#" << it->second.num << " UNFILLED " << temp->get_id() << " " << temp->get_shares() << std::endl;
+            }
+            else if(it->second.action == 'c')
+            {
+                //print #<n> CANCEL <id> <qty>
+                std::cout << "#" << it->second.num << " CANCEL " << temp->get_id() << " " << temp->get_shares() << std::endl;
             }
         }
     }
