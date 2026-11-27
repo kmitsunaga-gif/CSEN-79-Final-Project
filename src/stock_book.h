@@ -19,11 +19,16 @@
 #include <functional> //for std::greater, std::less
 
 //hand-built core structures
-#include "B_tree.h"
 #include "doubly_linked_list.h" //list
 #include "vector.h"
+//These three are not in the repo yet. HandBuiltTraits is only compiled once all three exist,
+//so the STL version (StdTraits) builds in the meantime.
+#if __has_include("B_tree.h") && __has_include("singly_linked_list.h") && __has_include("map.h")
+#define STOCK_BOOK_HAS_HANDBUILT 1
+#include "B_tree.h"
 #include "singly_linked_list.h" //forward list
 #include "map.h"
+#endif
 
 //stl containers
 #include <map> //B-tree and map
@@ -67,6 +72,7 @@ struct TailForwardList
  NOTE: compile with flag -DSTOCK_BOOK_FORWARD if to use TailForwardList; vector is used by default
  */
 
+ #if defined(STOCK_BOOK_HAS_HANDBUILT)
 struct HandBuiltTraits
 {
     using BuyBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::greater<double>>;
@@ -80,6 +86,7 @@ struct HandBuiltTraits
 #endif
     using UserHistoryMap = map<std::string, UserHistory*>;
 };
+#endif
 
 struct StdTraits
 {
