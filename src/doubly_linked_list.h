@@ -95,9 +95,10 @@ public:
         using pointer           = T*;
         using reference         = T&;
 
-        iterator(doubly_linked_list_node<T>* initial = nullptr)
+        iterator(doubly_linked_list_node<T>* initial = nullptr, const doubly_linked_list* list = nullptr)
         {
             current = initial;
+            owner = list; //the list this iterator walks, so -- from end() can reach the tail
         }
         
         T& operator*() const
@@ -113,7 +114,7 @@ public:
         
         iterator operator++(int) // Postfix ++
         {
-            iterator original(current);
+            iterator original(*this); //copies whole iterator 
             current = current->next();
             return original;
         }
@@ -122,7 +123,7 @@ public:
         {
             if(current == nullptr) //if at end()
             {
-                current = end();
+                current = owner -> tail_ptr;
             }
             else
             {
@@ -133,10 +134,10 @@ public:
         
         iterator operator--(int) // Postfix --
         {
-            iterator original(current);
+            iterator original(*this);
             if(current == nullptr) //if at end()
             {
-                current = end();
+                current = owner->tail_ptr;
             }
             else
             {
@@ -157,6 +158,7 @@ public:
         
     private:
         doubly_linked_list_node<T>* current;
+        const doubly_linked_list* owner;
         friend class doubly_linked_list<T>;
     };
     
@@ -175,15 +177,17 @@ public:
         using pointer           = const T*;
         using reference         = const T&;
 
-        const_iterator(const doubly_linked_list_node<T>* initial = nullptr)
+        const_iterator(const doubly_linked_list_node<T>* initial = nullptr, const doubly_linked_list* list = nullptr)
         {
             current = initial;
+            owner = list;
         }
         
         // Allow implicit conversion from Iterator to ConstIterator
         const_iterator(const iterator& it)
         {
             current = it.current;
+            owner = it.owner;
         }
         
         const T& operator*() const
@@ -199,21 +203,21 @@ public:
         
         const_iterator operator++(int) // Postfix ++
         {
-            const_iterator original(current);
+            const_iterator original(*this);
             current = current->next();
             return original;
         }
         
         const_iterator& operator--() // Prefix --
         {
-            current = current->prev();
+            current = (current == nullptr) ? owner->tail_ptr : current->prev();
             return *this;
         }
         
         const_iterator operator--(int) // Postfix --
         {
-            const_iterator original(current);
-            current = current->prev();
+            const_iterator original(*this);
+            current = (current == nullptr) ? owner->tail_ptr : current->prev(); //from end(), go to the last node
             return original;
         }
         
@@ -229,6 +233,7 @@ public:
         
     private:
         const doubly_linked_list_node<T>* current;
+        const doubly_linked_list* owner;
         friend class doubly_linked_list<T>;
     };
     
@@ -308,13 +313,13 @@ doubly_linked_list<T>& doubly_linked_list<T>::operator=(const doubly_linked_list
 template <typename T>
 typename doubly_linked_list<T>::iterator doubly_linked_list<T>::begin()
 {
-    return iterator(head_ptr);
+    return iterator(head_ptr, this);
 }
 
 template <typename T>
 typename doubly_linked_list<T>::iterator doubly_linked_list<T>::end()
 {
-    return iterator(nullptr);
+    return iterator(nullptr, this);
 }
 
 template <typename T>
@@ -469,13 +474,13 @@ size_t doubly_linked_list<T>::size() const
 template <typename T>
 typename doubly_linked_list<T>::const_iterator doubly_linked_list<T>::begin() const
 {
-    return const_iterator(head_ptr);
+    return const_iterator(head_ptr, this);
 }
 
 template <typename T>
 typename doubly_linked_list<T>::const_iterator doubly_linked_list<T>::end() const
 {
-    return const_iterator(nullptr);
+    return const_iterator(nullptr, this);
 }
 
 template <typename T>

@@ -43,6 +43,8 @@ endif()
 # Unit tests: every .cpp in tests/. Your headers live in include/ so tests can use them.
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(tests ${TEST_SOURCES})
+target_include_directories(tests PRIVATE src)
+target_sources(tests PRIVATE src/order.cpp)
 
 # Workload generators (provided, do not change).
 add_executable(gen_orderbook tools/gen_orderbook.cpp)
