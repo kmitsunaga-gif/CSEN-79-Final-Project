@@ -19,15 +19,15 @@
 #include <functional> //for std::greater, std::less
 
 //hand-built core structures
+#define STOCK_BOOK_HAS_HANDBUILT 1
 #include "doubly_linked_list.h" //list
 #include "vector.h"
-//These three are not in the repo yet. HandBuiltTraits is only compiled once all three exist,
-//so the STL version (StdTraits) builds in the meantime.
-#if __has_include("B_tree.h") && __has_include("singly_linked_list.h") && __has_include("map.h")
-#define STOCK_BOOK_HAS_HANDBUILT 1
+#include "AvlMap.h"
+
+//B Tree and singly_linked_list are not in the repo yet, default with using doubly linked list, vector, and AvlMap first
+#if __has_include("B_tree.h") && __has_include("singly_linked_list.h")
 #include "B_tree.h"
 #include "singly_linked_list.h" //forward list
-#include "map.h"
 #endif
 
 //stl containers
