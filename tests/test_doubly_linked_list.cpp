@@ -5,6 +5,7 @@
 // memory, and the ListMetrics counters.
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "doctest/doctest.h"
 #include "doubly_linked_list.h"
@@ -34,6 +35,33 @@ int contents(const List& l, int* out) {
     int n = 0;
     for (auto it = l.begin(); it != l.end(); ++it) out[n++] = *it;
     return n;
+}
+
+// Checks the list's links from the outside, using only its public functions:
+//  - walking forward (next links) from begin() visits size() nodes and stops at end(),
+//    so the tail's next is nullptr
+//  - walking backward (prev links) from end() starts at the tail and stops after size()
+//    nodes, so the head's prev is nullptr
+//  - both walks see the same values in opposite order, so every prev matches its next
+// A broken prev/next link, a stale head or tail, or a wrong count makes this false.
+template <class L>
+bool links_ok(const L& l) {
+    std::vector<typename L::const_iterator> forward;
+    for (auto it = l.begin(); it != l.end(); ++it) {
+        forward.push_back(it);
+        if (forward.size() > l.size()) return false;        // next links never reach the end
+    }
+    if (forward.size() != l.size()) return false;
+    std::size_t i = forward.size();
+    auto it = l.end();
+    while (true) {
+        --it;                                                // first step: end() -> tail
+        if (it == l.end()) break;                            // stepped past the head (prev == nullptr)
+        if (i == 0) return false;                            // more nodes backward than forward
+        --i;
+        if (!(it == forward[i])) return false;               // prev link disagrees with next link
+    }
+    return i == 0;                                           // reached every node going backward
 }
 
 List make_list(int count) {           // 1, 2, ..., count
@@ -184,6 +212,8 @@ TEST_CASE("list: remove") {
         for (int v = 4; v >= 1; --v) CHECK(l.remove(v));
         CHECK(l.empty());
     }
+
+    CHECK(links_ok(l));                     // runs after every subcase
 }
 
 TEST_CASE("list: remove takes only the first of duplicate values") {
@@ -219,6 +249,54 @@ TEST_CASE("list: holds Order* and removes by pointer, as a price level does") {
     level.pop_front();                      // a fills
     CHECK(level.front() == &c);
     CHECK(level.size() == 1);
+}
+
+TEST_CASE("list: links stay correct after every kind of change") {
+    List l;
+    CHECK(links_ok(l));                     // empty
+    l.push_back(1);
+    CHECK(links_ok(l));                     // one node: it is both head and tail
+    for (int v = 2; v <= 6; ++v) l.push_back(v);
+    CHECK(links_ok(l));                     // 1 2 3 4 5 6
+    l.remove(1);
+    CHECK(links_ok(l));                     // head removed
+    l.remove(6);
+    CHECK(links_ok(l));                     // tail removed
+    l.remove(4);
+    CHECK(links_ok(l));                     // middle removed: 2 3 5
+    l.pop_front();
+    CHECK(links_ok(l));                     // 3 5
+    l.push_back(7);
+    CHECK(links_ok(l));                     // push after removals: 3 5 7
+    l.remove(5);
+    l.remove(3);
+    CHECK(links_ok(l));                     // only 7 left
+    l.remove(7);
+    CHECK(links_ok(l));                     // only element removed: empty again
+    CHECK(l.begin() == l.end());
+    l.push_back(8);
+    CHECK(links_ok(l));                     // head and tail were reset correctly
+}
+
+TEST_CASE("list: seller A cancels while seller B waits behind: B becomes the head") {
+    // Two sell orders at $5.00 in one price level. A came first, so A is at the head.
+    Order a(1, 5.00, 100, "A");
+    Order b(2, 5.00, 100, "B");
+    doubly_linked_list<Order*> level;
+    level.push_back(&a);
+    level.push_back(&b);
+
+    CHECK(level.remove(&a));                // CANCEL 1: remove the head
+    CHECK(level.front() == &b);             // B is now first in line
+    CHECK(level.size() == 1);
+    CHECK(links_ok(level));                 // B is head and tail; its prev and next are nullptr
+
+    Order c(3, 5.00, 50, "C");
+    level.push_back(&c);                    // a new seller joins behind B
+    CHECK(links_ok(level));
+    auto last = level.end();
+    --last;
+    CHECK(*last == &c);                     // the tail is C, reached through the prev links
 }
 
 // ---------- iterators ----------
