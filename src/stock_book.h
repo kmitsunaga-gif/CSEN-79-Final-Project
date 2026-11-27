@@ -37,7 +37,7 @@
 #include <vector>
 
 
-namespace CSEN79_StockBook
+namespace CSEN79_StockBook_team7
 {
 
 struct historyTag
@@ -75,16 +75,16 @@ struct TailForwardList
  #if defined(STOCK_BOOK_HAS_HANDBUILT)
 struct HandBuiltTraits
 {
-    using BuyBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::greater<double>>;
-    using SellBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::less<double>>;
-    using IdOrderMap = map<Order::id_type, Order*>;
+    using BuyBTree = AvlMap<double, doubly_linked_list<Order*>*, 4, std::greater<double>>;
+    using SellBTree = AvlMap<double, doubly_linked_list<Order*>*, 4, std::less<double>>;
+    using IdOrderMap = AvlMap<Order::id_type, Order*>;
     using OrderList = doubly_linked_list<Order*>;
 #if defined(STOCK_BOOK_FORWARD) //if forward-list implementation:
     using UserHistory = TailForwardList<singly_linked_list<std::pair<Order*, struct historyTag>>>;
 #else
     using UserHistory = vector<std::pair<Order*, struct historyTag>>;
 #endif
-    using UserHistoryMap = map<std::string, UserHistory*>;
+    using UserHistoryMap = AvlMap<std::string, UserHistory*>;
 };
 #endif
 
