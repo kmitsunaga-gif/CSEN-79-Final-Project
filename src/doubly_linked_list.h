@@ -313,13 +313,13 @@ doubly_linked_list<T>& doubly_linked_list<T>::operator=(const doubly_linked_list
 template <typename T>
 typename doubly_linked_list<T>::iterator doubly_linked_list<T>::begin()
 {
-    return iterator(head_ptr);
+    return iterator(head_ptr, this);
 }
 
 template <typename T>
 typename doubly_linked_list<T>::iterator doubly_linked_list<T>::end()
 {
-    return iterator(nullptr);
+    return iterator(nullptr, this);
 }
 
 template <typename T>
@@ -474,13 +474,13 @@ size_t doubly_linked_list<T>::size() const
 template <typename T>
 typename doubly_linked_list<T>::const_iterator doubly_linked_list<T>::begin() const
 {
-    return const_iterator(head_ptr);
+    return const_iterator(head_ptr, this);
 }
 
 template <typename T>
 typename doubly_linked_list<T>::const_iterator doubly_linked_list<T>::end() const
 {
-    return const_iterator(nullptr);
+    return const_iterator(nullptr, this);
 }
 
 template <typename T>
