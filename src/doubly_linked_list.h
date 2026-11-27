@@ -13,7 +13,7 @@
 #include <iterator> //for bidirectional_iterator_tag
 
 
-namespace CSEN79_StockBook
+namespace CSEN79_StockBook_team7
 {
 
 template <typename T>
