@@ -19,15 +19,17 @@
 #include <functional> //for std::greater, std::less
 
 //hand-built core structures
-#include "B_tree.h" //TODO: implement
+#include "B_tree.h"
 #include "doubly_linked_list.h" //list
-#include "singly_linked_list.h" //forward list TODO: implement
+#include "vector.h"
+#include "singly_linked_list.h" //forward list
 #include "map.h"
 
 //stl containers
 #include <map> //B-tree and map
 #include <list>
 #include <forward_list> //TODO: compare with using list/vector
+#include <vector>
 
 
 namespace CSEN79_StockBook
@@ -60,14 +62,23 @@ struct TailForwardList
     size_t size() const;
 };
 
+
+/*
+ NOTE: compile with flag -DSTOCK_BOOK_FORWARD if to use TailForwardList; vector is used by default
+ */
+
 struct HandBuiltTraits
 {
     using BuyBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::greater<double>>;
     using SellBTree = B_tree<double, doubly_linked_list<Order*>*, 4, std::less<double>>;
-    using IdOrderMap = map<Order::id_type, Order*>; //TODO: Map
+    using IdOrderMap = map<Order::id_type, Order*>;
     using OrderList = doubly_linked_list<Order*>;
-    using forward_list = singly_linked_list<std::pair<Order*, struct historyTag>>; //TODO: singly_linked_list
-    using UserHistoryMap = map<std::string, TailForwardList<forward_list>*>;
+#if defined(STOCK_BOOK_FORWARD) //if forward-list implementation:
+    using UserHistory = TailForwardList<singly_linked_list<std::pair<Order*, struct historyTag>>>;
+#else
+    using UserHistory = vector<std::pair<Order*, struct historyTag>>;
+#endif
+    using UserHistoryMap = map<std::string, UserHistory*>;
 };
 
 struct StdTraits
@@ -76,8 +87,12 @@ struct StdTraits
     using SellBTree = std::map<double, std::list<Order*>*, std::less<double>>;
     using IdOrderMap = std::map<Order::id_type, Order*>;
     using OrderList = std::list<Order*>;
-    using forward_list = std::forward_list<std::pair<Order*, struct historyTag>>;
-    using UserHistoryMap = std::map<std::string, TailForwardList<forward_list>*>;
+#if defined(STOCK_BOOK_FORWARD) //if forward-list implementation:
+    using UserHistory = TailForwardList<std::forward_list<std::pair<Order*, struct historyTag>>>;
+#else
+    using UserHistory = std::vector<std::pair<Order*, struct historyTag>>;
+#endif
+    using UserHistoryMap = std::map<std::string, UserHistory*>;
 };
 
 template <typename Traits>
@@ -85,10 +100,10 @@ struct stock_book
 {
     using BuyBTree = typename Traits::BuyBTree;
     using SellBTree = typename Traits::SellBTree;
-    using UserHistoryMap = typename Traits::UserHistoryMap; //a Map mapping String to a List of Order*
     using IdOrderMap = typename Traits::IdOrderMap;
     using OrderList = typename Traits::OrderList;
-    using ForwardList = typename Traits::forward_list;
+    using UserHistory = typename Traits::UserHistory; //a Map mapping String to a List of Order*
+    using UserHistoryMap = typename Traits::UserHistoryMap;
     
     //stack creations
     BuyBTree buyBook;
@@ -142,18 +157,19 @@ stock_book<Traits>::~stock_book()
     // 3. Clean up all user history lists and their stored history Order* copies
     for (auto it = userHistoryMap.begin(); it != userHistoryMap.end(); ++it)
     {
-        TailForwardList<ForwardList>* history = it->second;
+        auto history = it->second;
+        //history is a TailForwardList* / vector*
         if (history != nullptr)
         {
             for (auto histIt = history->begin(); histIt != history->end(); ++histIt)
             {
-                delete histIt->first;
+                delete (*histIt).first;
             }
             delete history;
         }
     }
     
-    //buyBook, sellBook, userHistoryMap, idOrderMap will automatically run their own destructors afterwards since they are stack allocated
+    //buyBook, sellBook, userHistoryMap, idOrderMap, vectors will automatically run their own destructors afterwards since they are stack allocated
     
     // Post-condition: Release heap-allocated Order* and history structures cleanly.
     /*
@@ -190,7 +206,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
     
     //append Order copy in user's HISTORY to print "#<n> PLACE <id> BUY <qty> <price>"
     typename UserHistoryMap::iterator userHistoryMap_it = userHistoryMap.find(user);
-    if(userHistoryMap_it != userHistoryMap.end()) //user is inserted and history (TailForwardList) has been created
+    if(userHistoryMap_it != userHistoryMap.end()) //user is inserted and userHistory has been created
     {
         //'b' means "PLACE...BUY"
         historyTag tag{'b',num};
@@ -198,10 +214,10 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
     }
     else
     {
-        TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
+        auto userHistory = new UserHistory;
         historyTag tag{'b', num};
-        history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
+        userHistory->push_back(std::make_pair(copy, tag));
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, userHistory)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any ask_price <= price
@@ -222,7 +238,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
             Order* oldestOrderAtBest = bestOrders->front(); //get the oldest order
             Order::size_type filled = std::min(oldestOrderAtBest->get_shares(), qty); //get amount of filled shared
             
-            //append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+            //append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
             //userHistoryMap_it points to a pair of the buyer's name and History
             //'f' means "FILL..."
             Order* buyCopy = new Order(id, bestPrice, filled, user);
@@ -310,7 +326,7 @@ void stock_book<Traits>::buyLimit(const std::string& user, Order::id_type id, Or
      - front, reduce (or pop_front), until qty == 0 OR book ran out of matches
      - reduceShares(lowest(qty, ask_qty)) for both orders
      - if ask is completely filled, pop that order from sell/ask B-tree (remove from list, and remove the price level from B-tree if necessary)
-     - append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+     - append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
      - for each fill, print one line of TRADE <buy id> <sell id> <qty> <price>
      3) rest by pushing the Order into the buy/bid B-tree
      - insert the Order's id and pointer as key and value pair to the idOrderMap
@@ -343,10 +359,10 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
     }
     else
     {
-        TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
+        auto userHistory = new UserHistory; //heap creation
         historyTag tag{'s', num};
-        history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
+        userHistory->push_back(std::make_pair(copy, tag));
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, userHistory)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any bid_price >= price
@@ -367,7 +383,7 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
             Order* oldestOrderAtBest = bestOrders->front(); //get the oldest order
             Order::size_type filled = std::min(oldestOrderAtBest->get_shares(), qty); //get amount of filled shared
             
-            //append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+            //append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
             //userHistoryMap_it points to a pair of the seller's name and History
             //'f' means "FILL..."
             Order* sellCopy = new Order(id, bestPrice, filled, user);
@@ -455,7 +471,7 @@ void stock_book<Traits>::sellLimit(const std::string& user, Order::id_type id, O
      - front, reduce (or pop_front), until qty == 0 OR book ran out of matches
      - reduceShares(lowest(qty, ask_qty)) for both orders
      - if bid is completely filled, pop that order from buy/bid B-tree (remove from list, and remove the price level from B-tree if necessary)
-     - append #<m> FILL <id> <fill_qty> <bid_price> in buyer & seller's HISTORY
+     - append #<n> FILL <id> <fill_qty> <bid_price> in buyer & seller's HISTORY
      - for each fill, print one line of TRADE <buy id> <sell id> <qty> <price>
      3) rest by pushing the Order into the sell/ask B-tree
      - insert the Order's id and pointer as key and value pair to the idOrderMap
@@ -488,10 +504,10 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
     }
     else
     {
-        TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
+        auto userHistory = new UserHistory; //heap creation
         historyTag tag{'b', num};
-        history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
+        userHistory->push_back(std::make_pair(copy, tag));
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, userHistory)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best sell orders, any price
@@ -510,7 +526,7 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
         Order* oldestOrderAtBest = bestOrders->front(); //get the oldest order
         Order::size_type filled = std::min(oldestOrderAtBest->get_shares(), qty); //get amount of filled shared
         
-        //append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+        //append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
         //userHistoryMap_it points to a pair of the buyer's name and History
         Order* buyCopy = new Order(id, bestPrice, filled, user);
         historyTag tag{'f', num};
@@ -565,7 +581,7 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
         userHistoryMap_it = userHistoryMap.find(user);
         historyTag tag{'u', num};
         userHistoryMap_it->second->push_back(std::make_pair(current, tag));
-
+        
         //print UNFILLED <id> <unfilled_qty>
         std::cout << "UNFILLED " << id << " " << qty << std::endl;
         
@@ -587,7 +603,7 @@ void stock_book<Traits>::buyMarket(const std::string& user, Order::id_type id, O
      - front, reduce (or pop_front), until qty == 0 OR reaching end of book
      - reduceShares(lowest(qty, ask_qty)) for both orders
      - if ask is completely filled, pop that order from sell/ask B-tree (remove from list, and remove the price level from B-tree if necessary)
-     - append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+     - append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
      - for each fill, print one line of TRADE <buy id> <sell id> <qty> <price>
      3) record then discard the unfilled
      - append #<n> UNFILLED <id> <qty> in user's HISTORY
@@ -621,10 +637,10 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
     }
     else
     {
-        TailForwardList<ForwardList> * history = new TailForwardList<ForwardList>(); //heap creation
+        auto userHistory = new UserHistory; //heap creation
         historyTag tag{'s', num};
-        history->push_back(std::make_pair(copy, tag));
-        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, history)).first; //insert and update userHistoryMap_it to point to inserted
+        userHistory->push_back(std::make_pair(copy, tag));
+        userHistoryMap_it = userHistoryMap.insert(std::make_pair(user, userHistory)).first; //insert and update userHistoryMap_it to point to inserted
     }
     
     //match and fill from the best buy orders, any price
@@ -643,7 +659,7 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
         Order* oldestOrderAtBest = bestOrders->front(); //get the oldest order
         Order::size_type filled = std::min(oldestOrderAtBest->get_shares(), qty); //get amount of filled shared
         
-        //append #<m> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
+        //append #<n> FILL <id> <fill_qty> <trade_price> in buyer & seller's HISTORY
         //userHistoryMap_it points to a pair of the seller's name and History
         Order* sellCopy = new Order(id, bestPrice, filled, user);
         historyTag tag{'f', num};
@@ -720,7 +736,7 @@ void stock_book<Traits>::sellMarket(const std::string& user, Order::id_type id, 
      - front, reduce (or pop_front), until qty == 0 OR reaching end of book
      - reduceShares(lowest(qty, ask_qty)) for both orders
      - if bid is completely filled, pop that order from buy/bid B-tree (remove from list, and remove the price level from B-tree if necessary)
-     - append #<m> FILL <id> <fill_qty> <bid_price> in buyer & seller's HISTORY
+     - append #<n> FILL <id> <fill_qty> <bid_price> in buyer & seller's HISTORY
      - for each fill, print one line of TRADE <buy id> <sell id> <qty> <price>
      3) record then discard the unfilled
      - append #<n> UNFILLED <id> <qty> in user's HISTORY
@@ -884,25 +900,29 @@ void stock_book<Traits>::bookPrint(size_t depth) const
 template <typename Traits>
 void stock_book<Traits>::historyPrint(const std::string& user, size_t n) const
 {
-    //using userHistoryMap, retrieve user's history list (TailForwardList) with user's name
+    //using userHistoryMap, retrieve user's history list (a TailForwardList or vector) with user's name
     auto userHistoryMap_it = userHistoryMap.find(user);
     if(userHistoryMap_it != userHistoryMap.end()) //if found
     {
-        //using forward iterator of TailForwardList, print while iterates forward for the newest nth events in user's history
+        //using iterator of userHistory, print while iterates forward for the newest nth events in user's history
+        auto userHistory = userHistoryMap_it->second;
         
-        TailForwardList<ForwardList>* TailForwardList_ptr = userHistoryMap_it->second;
-        auto it = TailForwardList_ptr->begin();
+        auto it = userHistory->begin();
         
-        if(TailForwardList_ptr->size() > n) //omit this if size() <= n, and start printing from begin()
+        if(userHistory->size() > n) //omit this if size() <= n, and start printing from begin()
         {
             //move it forward by (size - n) steps before printing so that it prints the lastest n event
-            for(size_t i = 0; i < TailForwardList_ptr->size() - n; i++)
+#if defined(STOCK_BOOK_FORWARD)
+            for(size_t i = 0; i < userHistory->size() - n; i++)
             {
                 ++it;
             }
+#else
+            it += (userHistory->size() - n);
+#endif
         }
         
-        while((it != TailForwardList_ptr->end()) && (n > 0))
+        while((it != userHistory->end()) && (n > 0))
         {
             Order* temp = it->first;
             if(it->second.action == 'b')
@@ -981,9 +1001,10 @@ void stock_book<Traits>::historyPrint(const std::string& user) const
     auto userHistoryMap_it = userHistoryMap.find(user);
     if(userHistoryMap_it != userHistoryMap.end()) //if found
     {
-        //using forward iterator of TailForwardList, print while iterates forward for nth events in user's history
-        TailForwardList<ForwardList>* TailForwardList_ptr = userHistoryMap_it->second;
-        for(auto it = TailForwardList_ptr->begin(); it != TailForwardList_ptr->end(); ++it)
+        //using iterator of userHistory, print while iterates through user's history
+        auto userHistory = userHistoryMap_it->second;
+        
+        for(auto it = userHistory->begin(); it != userHistory->end(); ++it)
         {
             Order* temp = it->first;
             if(it->second.action == 'b')
@@ -993,7 +1014,7 @@ void stock_book<Traits>::historyPrint(const std::string& user) const
                 if(price != 0.00)
                 {
                     //print #<n> PLACE <id> BUY <qty> <price>
-                    std::cout << "#" << it->second.num << " PLACE " << temp->get_id() << " BUY " << temp->get_shares() << " "  << price << std::endl;
+                    std::cout << "#" << it->second.num << " PLACE " << temp->get_id() << " BUY " << temp->get_shares() << " " << price << std::endl;
                 }
                 else
                 {
@@ -1046,7 +1067,7 @@ void stock_book<Traits>::historyPrint(const std::string& user) const
      - #<n> PLACE <id> SELL <qty> <price> //'s'
      - #<n> PLACE <id> BUY <qty> MKT //second == 'b' && price == 0.00
      - #<n> PLACE <id> SELL <qty> MKT //second == 's' && price == 0.00
-     - #<m> FILL <id> <fill_qty> <trade_price> //'f'
+     - #<n> FILL <id> <fill_qty> <trade_price> //'f'
      - #<n> UNFILLED <id> <qty> //'u'
      - print "END" in last line
      */
